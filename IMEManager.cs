@@ -3,32 +3,34 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Hacknet;
 using Hacknet.Gui;
-using Microsoft.Xna.Framework;
 using SDL2;
 
-namespace HacknetIME
+namespace KernelFix
 {
+    /// <summary>
+    /// SDL 事件过滤器：拦截 SDL 的文本输入事件，防止与 TSF/ImeSharp 重复。
+    /// 在 TSF 模式下（UseTSF = true），最终文字由 TSFManager 回调注入，这里只负责阻止原生的 TextInputHook。
+    /// </summary>
     public static class IMEManager
     {
-        /// <summary>
-        /// 当前正在组合的文本（输入法预览），例如“ni hao”
-        /// </summary>
-        public static string CompositionString { get; private set; } = "";
+        /// <summary>当前组合文本（输入法预览）</summary>
+        public static string CompositionString { get; set; } = "";
+
+        /// <summary>是否启用 TSF 模式（影响 SDL 最终文字处理）</summary>
+        public static bool UseTSF = true;
+
+        /// <summary>IME 是否活跃（始终 true，表示接管所有文本输入）</summary>
+        public static bool IsActive => true;
 
         private static SDL.SDL_EventFilter eventFilterDelegate;
         private static IntPtr filterUserdata = IntPtr.Zero;
 
         public static void Initialize()
         {
-            if (eventFilterDelegate != null)
-            {
-                Console.WriteLine("[IMEManager] Already initialized.");
-                return;
-            }
-
+            if (eventFilterDelegate != null) return;
             eventFilterDelegate = EventFilter;
             SDL.SDL_AddEventWatch(eventFilterDelegate, filterUserdata);
-            Console.WriteLine("[IMEManager] SDL event watch added.");
+            if (KernelFix.Debug) Console.WriteLine("[IMEManager] SDL event watch added.");
         }
 
         public static void Dispose()
@@ -37,26 +39,32 @@ namespace HacknetIME
             {
                 SDL.SDL_DelEventWatch(eventFilterDelegate, filterUserdata);
                 eventFilterDelegate = null;
-                Console.WriteLine("[IMEManager] SDL event watch removed.");
             }
         }
 
         /// <summary>
-        /// 事件过滤器回调。返回 0 阻止事件继续传播（例如阻止内置 TextInputHook 接收），返回 1 允许。
+        /// SDL 事件过滤器回调。
+        /// - SDL_TEXTEDITING：组合文本，TSF 模式下忽略（由 TSFManager 管理），非 TSF 模式下记录。
+        /// - SDL_TEXTINPUT：最终文字，TSF 模式下直接吞掉（由 TSF 回调注入），非 TSF 模式下自己注入。
         /// </summary>
         private static int EventFilter(IntPtr userdata, IntPtr evtPtr)
         {
-            SDL.SDL_Event evt = (SDL.SDL_Event)Marshal.PtrToStructure(evtPtr, typeof(SDL.SDL_Event));
+            var evt = (SDL.SDL_Event)Marshal.PtrToStructure(evtPtr, typeof(SDL.SDL_Event));
             switch (evt.type)
             {
                 case SDL.SDL_EventType.SDL_TEXTEDITING:
-                    HandleTextEditing(evt.edit);
-                    return 1; // 组合文本事件仍传递，不影响其他处理
+                    if (!UseTSF)
+                        HandleTextEditing(evt.edit);
+                    return 0; // 阻止内置 TextInputHook 接收
 
                 case SDL.SDL_EventType.SDL_TEXTINPUT:
-                    HandleTextInput(evt.text);
-                    // 重要：返回 0 阻止事件到达 FNA 的 TextInputEXT，避免重复输入
-                    return 0;
+                    if (UseTSF)
+                        return 0; // TSF 模式下吞掉，避免重复
+                    else
+                    {
+                        HandleTextInput(evt.text);
+                        return 0;
+                    }
 
                 default:
                     return 1;
@@ -65,13 +73,10 @@ namespace HacknetIME
 
         private static unsafe void HandleTextEditing(SDL.SDL_TextEditingEvent edit)
         {
-            // 读取 32 字节内的文本，转为字符串
             byte* textPtr = edit.text;
             int length = 0;
             while (length < 32 && textPtr[length] != 0) length++;
             CompositionString = Encoding.UTF8.GetString(textPtr, length);
-
-            Console.WriteLine($"[IMEManager] TextEditing: \"{CompositionString}\" (start={edit.start}, length={edit.length})");
         }
 
         private static unsafe void HandleTextInput(SDL.SDL_TextInputEvent input)
@@ -79,35 +84,27 @@ namespace HacknetIME
             byte* textPtr = input.text;
             int length = 0;
             while (length < 32 && textPtr[length] != 0) length++;
-            string finalText = Encoding.UTF8.GetString(textPtr, length);
-
-            Console.WriteLine($"[IMEManager] TextInput: \"{finalText}\"");
-            InjectTextToTerminal(finalText);
-            CompositionString = "";
+            string final = Encoding.UTF8.GetString(textPtr, length);
+            InjectText(final);
         }
 
         /// <summary>
-        /// 将最终确认的文本插入到当前终端的当前行，并更新光标位置。
+        /// 将文本注入到终端光标位置。可被 TSFManager 等外部模块调用。
         /// </summary>
-        private static void InjectTextToTerminal(string text)
+        public static void InjectText(string text)
         {
             try
             {
-                OS os = OS.currentInstance;
-                if (os == null || os.terminal == null)
-                {
-                    Console.WriteLine("[IMEManager] No OS/terminal instance, text ignored.");
-                    return;
-                }
+                var os = OS.currentInstance;
+                if (os?.terminal == null) return;
 
                 Terminal terminal = os.terminal;
-                // 安全插入到光标位置（.NET Framework 4.7.2 无 Math.Clamp）
-                int pos = TextBox.cursorPosition;
-                pos = Math.Max(0, Math.Min(pos, terminal.currentLine.Length));
+                int pos = Math.Max(0, Math.Min(TextBox.cursorPosition, terminal.currentLine.Length));
                 terminal.currentLine = terminal.currentLine.Insert(pos, text);
                 TextBox.cursorPosition = pos + text.Length;
 
-                Console.WriteLine($"[IMEManager] Injected text at pos {pos}, new cursor={TextBox.cursorPosition}");
+                if (KernelFix.Debug)
+                    Console.WriteLine($"[IMEManager] Injected \"{text}\" at pos {pos}, cursor={TextBox.cursorPosition}");
             }
             catch (Exception ex)
             {
