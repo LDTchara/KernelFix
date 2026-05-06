@@ -19,8 +19,19 @@ namespace KernelFix
         /// <summary>是否启用 TSF 模式（影响 SDL 最终文字处理）</summary>
         public static bool UseTSF = true;
 
-        /// <summary>IME 是否活跃（始终 true，表示接管所有文本输入）</summary>
-        public static bool IsActive => true;
+        /// <summary>
+        /// 动态判断是否应该接管输入：仅在终端已打开、输入启用且未锁定（如密码模式）时才激活。
+        /// 主菜单或其他界面的 TextBox 不受影响。
+        /// </summary>
+        public static bool IsActive
+        {
+            get
+            {
+                var os = OS.currentInstance;
+                if (os == null || os.terminal == null) return false;
+                return os.inputEnabled && !os.terminal.inputLocked;
+            }
+        }
 
         private static SDL.SDL_EventFilter eventFilterDelegate;
         private static IntPtr filterUserdata = IntPtr.Zero;

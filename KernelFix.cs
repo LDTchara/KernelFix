@@ -10,7 +10,7 @@ namespace KernelFix
     {
         public const string PluginGuid = "com.LDTchara.KernelFix";
         public const string PluginName = "KernelFix";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.0.1";
 
         /// <summary>
         /// 调试开关。设为 true 后会在控制台输出详细的输入法状态信息。
