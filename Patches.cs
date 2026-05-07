@@ -9,7 +9,8 @@ using Microsoft.Xna.Framework.Input;
 namespace KernelFix
 {
     // ═══════════════════════════════════════════════════════
-    // 0. 拦截 getFilteredKeys，防止英文字母通过该路径进入终端
+    // 0. 拦截 getFilteredKeys，防止英文字母通过该路径进入终端；
+    //    但当 Ctrl 被按下时放行，以支持 Ctrl+V 粘贴等操作。
     // ═══════════════════════════════════════════════════════
     [HarmonyPatch(typeof(GuiData), "getFilteredKeys")]
     internal class Patch_GetFilteredKeys
@@ -18,10 +19,15 @@ namespace KernelFix
         {
             if (IMEManager.IsActive)
             {
-                // 清空 TextInputHook 缓冲区，避免残余字符
+                // 如果 Ctrl 被按下，说明用户正在执行复制/粘贴等快捷键，
+                // 此时应让原方法处理剪贴板文字，不要拦截。
+                KeyboardState ks = GuiData.getKeyboadState();
+                if (ks.IsKeyDown(Keys.LeftControl) || ks.IsKeyDown(Keys.RightControl))
+                    return true;
+
                 GuiData.TextInputHook?.clearBuffer();
                 __result = new char[0];
-                return false; // 跳过原方法
+                return false;
             }
             return true;
         }
@@ -29,18 +35,23 @@ namespace KernelFix
 
     // ═══════════════════════════════════════════════════════
     // 1. 键盘过滤：保留控制键的长按/重复特性，阻止字符直接输入
+    //    同时保证 Ctrl+C/V/X 等剪贴板快捷键仍能正常工作
     // ═══════════════════════════════════════════════════════
     [HarmonyPatch(typeof(TextBox), "getFilteredStringInput")]
     internal class Patch_DisableNormalInput
     {
         static bool Prefix(string s, KeyboardState input, KeyboardState lastInput, ref string __result)
         {
-            if (!IMEManager.IsActive) return true; // 未激活时走原逻辑
+            if (!IMEManager.IsActive) return true;
+
+            // 如果 Ctrl 被按下，说明用户正在执行复制/粘贴等快捷键，
+            // 此时应完全交给原方法处理，避免破坏剪贴板功能。
+            if (input.IsKeyDown(Keys.LeftControl) || input.IsKeyDown(Keys.RightControl))
+                return true;
 
             Keys[] pressedKeys = input.GetPressedKeys();
             bool hasCharKey = false;
 
-            // 第一步：检查是否有任何非控制键被按下
             foreach (Keys key in pressedKeys)
             {
                 if (lastInput.IsKeyDown(key)) continue;
@@ -51,7 +62,6 @@ namespace KernelFix
                 }
             }
 
-            // 第二步：如果有字符键，我们接管所有键盘处理（包括控制键）
             if (hasCharKey)
             {
                 foreach (Keys key in pressedKeys)
@@ -60,14 +70,13 @@ namespace KernelFix
                     HandleControlKey(key, ref s);
                 }
                 __result = s;
-                return false; // 跳过原方法，避免字符被直接添加
+                return false;
             }
 
-            // 第三步：全部是控制键，交给原方法处理（保留长按、自动重复等功能）
+            // 全是控制键，交给原方法处理（支持长按）
             return true;
         }
 
-        // 判断是否为控制键（不会产生可打印字符的按键）
         private static bool IsControlKey(Keys key)
         {
             return key == Keys.Up || key == Keys.Down || key == Keys.Left || key == Keys.Right ||
@@ -78,7 +87,6 @@ namespace KernelFix
                    key == Keys.LeftAlt || key == Keys.RightAlt;
         }
 
-        // 处理控制键（当有字符键按下时，我们也手动实现控制键逻辑）
         private static void HandleControlKey(Keys key, ref string s)
         {
             switch (key)
@@ -104,7 +112,15 @@ namespace KernelFix
                         s = s.Remove(TextBox.cursorPosition, 1);
                     break;
 
-                    // Enter、Escape 等由 Terminal 的其他逻辑处理，此处不拦截
+                // Ctrl、Shift、Alt 等修饰键自身不执行任何操作，
+                // 它们的作用已在 Ctrl 检测中覆盖，这里直接忽略
+                case Keys.LeftControl:
+                case Keys.RightControl:
+                case Keys.LeftShift:
+                case Keys.RightShift:
+                case Keys.LeftAlt:
+                case Keys.RightAlt:
+                    break;
             }
         }
     }

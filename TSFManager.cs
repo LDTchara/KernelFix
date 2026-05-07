@@ -63,7 +63,7 @@ namespace KernelFix
                 InputMethod.Enabled = true;
 
                 Initialized = true;
-                if (KernelFix.Debug) Console.WriteLine("[TSFManager] ImeSharp TSF initialized successfully.");
+                Console.WriteLine("[TSFManager] ImeSharp TSF initialized successfully.");
             }
             catch (Exception ex)
             {
