@@ -10,7 +10,7 @@ namespace KernelFix
     {
         public const string PluginGuid = "com.LDTchara.KernelFix";
         public const string PluginName = "KernelFix";
-        public const string PluginVersion = "1.0.1";
+        public const string PluginVersion = "1.0.2";
 
         /// <summary>
         /// 调试开关。设为 true 后会在控制台输出详细的输入法状态信息。
@@ -23,15 +23,17 @@ namespace KernelFix
         {
             // 1. 在窗口创建前设置 DPI 感知，修复高 DPI 缩放导致的分辨率异常
             SetProcessDPIAware();
-            if (Debug) Console.WriteLine("[KernelFix] DPI awareness set.");
+            Log.LogDebug("DPI awareness set.");
 
             // 2. 初始化 SDL 事件过滤器（用于拦截组合文本/最终文字，避免重复）
             IMEManager.Initialize();
 
             // 3. 应用所有 Harmony 补丁（键盘过滤、自绘候选框、TSF 初始化等）
             HarmonyInstance.PatchAll();
-            if (Debug) Console.WriteLine("[KernelFix] Patches applied.");
-
+            Log.LogDebug("Patches applied.");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("[KernelFix] Loaded successfully.");
+            Console.ResetColor();
             return true;
         }
 
@@ -39,7 +41,7 @@ namespace KernelFix
         {
             IMEManager.Dispose();
             HarmonyInstance.UnpatchSelf();
-            if (Debug) Console.WriteLine("[KernelFix] Unloaded.");
+            Log.LogDebug("Unloaded.");
             return true;
         }
 
