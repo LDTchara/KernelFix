@@ -28,7 +28,9 @@ namespace KernelFix
             get
             {
                 var os = OS.currentInstance;
-                if (os == null || os.terminal == null) return false;
+                // 增加判断：如果 OS 已经退出游戏，也视为未激活
+                if (os == null || os.terminal == null || os.HasExitedAndEnded)
+                    return false;
                 return os.inputEnabled && !os.terminal.inputLocked;
             }
         }
@@ -64,18 +66,24 @@ namespace KernelFix
             switch (evt.type)
             {
                 case SDL.SDL_EventType.SDL_TEXTEDITING:
-                    if (!UseTSF)
+                    // 只在终端活跃且 TSF 模式下才拦截（防止原版接收组合文本）
+                    if (UseTSF && IsActive)
+                        return 0;
+                    if (!UseTSF && IsActive)
                         HandleTextEditing(evt.edit);
-                    return 0; // 阻止内置 TextInputHook 接收
+                    return 1; // 主菜单等其他情况放行
 
                 case SDL.SDL_EventType.SDL_TEXTINPUT:
-                    if (UseTSF)
-                        return 0; // TSF 模式下吞掉，避免重复
-                    else
+                    // TSF 模式下，仅在终端活跃时拦截，由 TSF 注入
+                    if (UseTSF && IsActive)
+                        return 0;
+                    // 非 TSF 模式且终端活跃，自己处理注入
+                    if (!UseTSF && IsActive)
                     {
                         HandleTextInput(evt.text);
                         return 0;
                     }
+                    return 1; // 主菜单等全部放行
 
                 default:
                     return 1;

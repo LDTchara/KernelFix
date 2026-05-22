@@ -19,6 +19,9 @@ namespace KernelFix
         /// <summary>是否已成功初始化</summary>
         public static bool Initialized { get; private set; } = false;
 
+        // 在 TSFManager 类内部添加一个静态字段，用于暂存未配对的高代理项
+        private static char? highSurrogateBuffer = null;
+
         private static IntPtr sdlWindowHandle = IntPtr.Zero;
 
         /// <summary>
@@ -72,12 +75,53 @@ namespace KernelFix
         }
 
         /// <summary>
-        /// 最终文字上屏回调。过滤控制字符，只注入可打印文本。
+        /// 最终文字上屏回调。过滤控制字符，并确保代理对被完整组合后再注入。
         /// </summary>
         private static void OnTextInput(char character)
         {
+            // 忽略控制字符和低 ASCII 控制码
             if (char.IsControl(character) || character < 32) return;
-            if (KernelFix.Debug) Console.WriteLine($"[TSFManager] TextInput: '{character}'");
+
+            // 情况1：当前字符是高代理项（\uD800-\uDBFF）
+            if (char.IsHighSurrogate(character))
+            {
+                // 如果之前已经有一个未配对的高代理，先将其丢弃（或可记录警告）
+                if (highSurrogateBuffer.HasValue)
+                {
+                    if (KernelFix.Debug)
+                        Console.WriteLine("[TSFManager] Discarding unpaired high surrogate before new high surrogate.");
+                }
+                highSurrogateBuffer = character;
+                return; // 等待低代理项到来
+            }
+
+            // 情况2：当前字符是低代理项（\uDC00-\uDFFF）
+            if (char.IsLowSurrogate(character))
+            {
+                if (highSurrogateBuffer.HasValue)
+                {
+                    // 配对成功：组合成完整码点并注入
+                    string completed = new string(new[] { highSurrogateBuffer.Value, character });
+                    highSurrogateBuffer = null;
+                    IMEManager.InjectText(completed);
+                }
+                else
+                {
+                    // 孤立的低代理：忽略它（或注入替换字符 \uFFFD）
+                    if (KernelFix.Debug)
+                        Console.WriteLine("[TSFManager] Orphan low surrogate ignored.");
+                }
+                return;
+            }
+
+            // 情况3：普通 BMP 字符（U+0000..U+D7FF 或 U+E000..U+FFFF）
+            // 如果存在未配对的高代理，先丢弃它（意味着之前的高代理是孤儿的）
+            if (highSurrogateBuffer.HasValue)
+            {
+                if (KernelFix.Debug)
+                    Console.WriteLine("[TSFManager] Discarding unpaired high surrogate before BMP character.");
+                highSurrogateBuffer = null;
+            }
             IMEManager.InjectText(character.ToString());
         }
 
