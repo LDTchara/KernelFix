@@ -1,10 +1,12 @@
-﻿using System;
-using Hacknet;
+﻿using Hacknet;
 using Hacknet.Gui;
+using Hacknet.Localization;
 using HarmonyLib;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
+using System;
+using System.Text;
 
 namespace KernelFix
 {
@@ -40,8 +42,16 @@ namespace KernelFix
     [HarmonyPatch(typeof(TextBox), "getFilteredStringInput")]
     internal class Patch_DisableNormalInput
     {
+        // 检查一个 char 是否是 Unicode 高代理项
+        private static bool IsHighSurrogate(char c) => char.IsHighSurrogate(c);
+        // 检查一个 char 是否是 Unicode 低代理项
+        private static bool IsLowSurrogate(char c) => char.IsLowSurrogate(c);
         static bool Prefix(string s, KeyboardState input, KeyboardState lastInput, ref string __result)
         {
+            // 1. 安全修剪光标位置，防止越界
+            if (TextBox.cursorPosition < 0) TextBox.cursorPosition = 0;
+            if (TextBox.cursorPosition > s.Length) TextBox.cursorPosition = s.Length;
+
             if (!IMEManager.IsActive) return true;
 
             // 如果 Ctrl 被按下，说明用户正在执行复制/粘贴等快捷键，
@@ -94,22 +104,69 @@ namespace KernelFix
                 case Keys.Tab: TextBox.TabWasPresed = true; break;
                 case Keys.Up: TextBox.UpWasPresed = true; break;
                 case Keys.Down: TextBox.DownWasPresed = true; break;
-                case Keys.Left: TextBox.cursorPosition = Math.Max(0, TextBox.cursorPosition - 1); break;
-                case Keys.Right: TextBox.cursorPosition = Math.Min(s.Length, TextBox.cursorPosition + 1); break;
+                case Keys.Left:
+                    if (TextBox.cursorPosition > 0)
+                    {
+                        TextBox.cursorPosition--;
+                        // 如果光标后退后落在某个代理对的低代理上，则再退一个位置，确保光标永远不会处于代理对中间
+                        if (TextBox.cursorPosition > 0 &&
+                            IsHighSurrogate(s[TextBox.cursorPosition - 1]) &&
+                            IsLowSurrogate(s[TextBox.cursorPosition]))
+                        {
+                            TextBox.cursorPosition--;
+                        }
+                    }
+                    break;
+
+                case Keys.Right:
+                    if (TextBox.cursorPosition < s.Length)
+                    {
+                        TextBox.cursorPosition++;
+                        // 如果光标移动后位于某个代理对的低代理之前（即下一个字符是低代理），再跳过一个字符
+                        if (TextBox.cursorPosition < s.Length &&
+                            IsHighSurrogate(s[TextBox.cursorPosition - 1]) &&
+                            IsLowSurrogate(s[TextBox.cursorPosition]))
+                        {
+                            TextBox.cursorPosition++;
+                        }
+                    }
+                    break;
                 case Keys.Home: TextBox.cursorPosition = 0; break;
                 case Keys.End: TextBox.cursorPosition = s.Length; break;
 
                 case Keys.Back:
                     if (s.Length > 0 && TextBox.cursorPosition > 0)
                     {
-                        s = s.Remove(TextBox.cursorPosition - 1, 1);
-                        TextBox.cursorPosition--;
+                        int deletePos = TextBox.cursorPosition - 1;
+                        // 如果要删除的位置是一个低代理，且其前面是高代理，则整个代理对一起删除
+                        if (deletePos > 0 && IsLowSurrogate(s[deletePos]) && IsHighSurrogate(s[deletePos - 1]))
+                        {
+                            s = s.Remove(deletePos - 1, 2);
+                            TextBox.cursorPosition -= 2;
+                        }
+                        else
+                        {
+                            s = s.Remove(deletePos, 1);
+                            TextBox.cursorPosition--;
+                        }
                     }
                     break;
 
                 case Keys.Delete:
                     if (s.Length > 0 && TextBox.cursorPosition < s.Length)
-                        s = s.Remove(TextBox.cursorPosition, 1);
+                    {
+                        char cur = s[TextBox.cursorPosition];
+                        // 如果当前字符是高代理，且下一个字符是低代理，则删除整个代理对
+                        if (IsHighSurrogate(cur) && TextBox.cursorPosition + 1 < s.Length && IsLowSurrogate(s[TextBox.cursorPosition + 1]))
+                        {
+                            s = s.Remove(TextBox.cursorPosition, 2);
+                            // 光标位置不变
+                        }
+                        else
+                        {
+                            s = s.Remove(TextBox.cursorPosition, 1);
+                        }
+                    }
                     break;
 
                 // Ctrl、Shift、Alt 等修饰键自身不执行任何操作，
@@ -301,6 +358,15 @@ namespace KernelFix
         {
             if (__instance.os?.inputEnabled == true)
                 TSFManager.UpdateTextInputRect(__instance.bounds);
+        }
+    }
+    [HarmonyPatch(typeof(MainMenu), "resetOS")]
+    internal class Patch_ResetTextDrawOffset
+    {
+        static void Postfix()
+        {
+            // 重置终端滚动偏移量，防止进入主菜单后因残留值导致 Substring 越界崩溃
+            TextBox.textDrawOffsetPosition = 0;
         }
     }
 }
