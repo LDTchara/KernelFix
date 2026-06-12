@@ -1,7 +1,9 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Hacknet;
+using HarmonyLib;
 using System;
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace KernelFix
@@ -11,7 +13,7 @@ namespace KernelFix
     {
         public const string PluginGuid = "com.LDTchara.KernelFix";
         public const string PluginName = "KernelFix";
-        public const string PluginVersion = "1.0.3";
+        public const string PluginVersion = "1.0.4";
 
         /// <summary>
         /// 调试开关。设为 true 后会在控制台输出详细的输入法状态信息。
@@ -20,6 +22,9 @@ namespace KernelFix
 
         /// <summary>配置项：是否启用 DPI 修复</summary>
         public static ConfigEntry<bool> EnableDPIFix;
+
+        /// <summary>配置项：是否启用高帧率 RAM 截断修复</summary>
+        public static ConfigEntry<bool> EnableRamFix;
 
         /// <summary>配置项：是否启用中文输入法</summary>
         public static ConfigEntry<bool> EnableIME;
@@ -38,6 +43,11 @@ namespace KernelFix
                 "EnableIME",
                 true,
                 "是否启用中文输入法支持（候选框、组合文本等）。");
+
+            EnableRamFix = Config.Bind("General",
+                "EnableRamFix",
+                true,
+                "是否启用高帧率下 ForkBomb / SignalScramble RAM 截断修复。高刷新率屏幕（144Hz+）上关闭此项可恢复原版行为。");
 
             // 1. DPI 修复（根据配置决定是否执行）
             if (EnableDPIFix.Value)
@@ -61,10 +71,33 @@ namespace KernelFix
             {
                 Log.LogDebug("IME disabled by config.");
             }
+            // 3. 高帧率下 ForkBomb / SignalScramble RAM 截断修复
+            if (EnableRamFix.Value)
+                ApplyRamFix();
+            else
+                Log.LogDebug("RAM fix disabled by config.");
+
             Console.ForegroundColor = ConsoleColor.Cyan;
             Console.WriteLine("[KernelFix] Loaded successfully.");
             Console.ResetColor();
             return true;
+        }
+
+        /// <summary>修复高帧率下 ForkBomb/SignalScramble 的 int 截断导致 RAM 不涨</summary>
+        private void ApplyRamFix()
+        {
+            var asm = typeof(Hacknet.ExeModule).Assembly;
+            var types = new[] { "Hacknet.ForkBombExe", "Hacknet.DLCTraceSlower", "Hacknet.ExtensionSequencerExe" };
+            foreach (var tn in types)
+            {
+                var t = asm.GetType(tn);
+                if (t == null) { Log.LogWarning($"[KF] Cannot find type {tn}"); continue; }
+                var m = AccessTools.Method(t, "Update");
+                if (m == null) { Log.LogWarning($"[KF] Cannot find {tn}.Update"); continue; }
+                HarmonyInstance.Patch(m,
+                    postfix: new HarmonyMethod(typeof(RamFixPatches), nameof(RamFixPatches.Postfix)));
+                Log.LogDebug($"[KF] RAM fix applied to {tn}");
+            }
         }
 
         public override bool Unload()
