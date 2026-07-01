@@ -5,14 +5,10 @@
     <LangVersion>11</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <NoWarn>CS8500</NoWarn>
+    <NoWarn>CS8500;MSB3277</NoWarn>
     <AnalysisMode>Recommended</AnalysisMode>
     <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
-
-  <ItemGroup>
-    <None Remove="高帧率RAM修复.md" />
-  </ItemGroup>
 
   <ItemGroup>
     <Reference Include="0Harmony">

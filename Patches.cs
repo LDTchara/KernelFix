@@ -369,4 +369,23 @@ namespace KernelFix
             TextBox.textDrawOffsetPosition = 0;
         }
     }
+
+    [HarmonyPatch(typeof(SAAddIRCMessage), "Trigger")]
+    internal class Patch_IRCNegativeDelay
+    {
+        static bool Prefix(SAAddIRCMessage __instance, object os_obj)
+        {
+            if (__instance.Delay >= 0f || Math.Abs(__instance.Delay) < 0.001f)
+                return true;
+            var os = (OS)os_obj;
+            var comp = Programs.getComputer(os, __instance.TargetComp);
+            if (comp == null) return false;
+            var irc = comp.getDaemon(typeof(IRCDaemon)) as IRCDaemon;
+            var sys = irc?.System ?? (comp.getDaemon(typeof(DLCHubServer)) as DLCHubServer)?.IRCSystem;
+            if (sys == null) return false;
+            var d = DateTime.Now + TimeSpan.FromSeconds(__instance.Delay);
+            sys.AddLog(__instance.Author, __instance.Message, d.Hour.ToString("00") + ":" + d.Minute.ToString("00"));
+            return false;
+        }
+    }
 }
