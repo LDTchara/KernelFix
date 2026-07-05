@@ -1,15 +1,30 @@
-using HarmonyLib;
 using System;
 using System.Reflection;
+using HarmonyLib;
+using Hacknet;
 
 namespace KernelFix
 {
-    /// <summary>高帧率 RAM 截断修复 — 仅在原版无法增加时补齐</summary>
-    internal static class RamFixPatches
+    internal static class ForkbombRamFix
     {
-        private static float _accum = 0f;
+        private static float _accum;
 
-        /// <summary>原方法运行后，检查是否需要补齐 truncation 损失</summary>
+        public static void Apply()
+        {
+            var asm = typeof(Hacknet.ExeModule).Assembly;
+            var types = new[] { "Hacknet.ForkBombExe", "Hacknet.DLCTraceSlower", "Hacknet.ExtensionSequencerExe" };
+            foreach (var tn in types)
+            {
+                var t = asm.GetType(tn);
+                if (t == null) { KernelFix.Instance.Log.LogWarning($"Cannot find type {tn}"); continue; }
+                var m = AccessTools.Method(t, "Update");
+                if (m == null) { KernelFix.Instance.Log.LogWarning($"Cannot find {tn}.Update"); continue; }
+                KernelFix.Instance.HarmonyInstance.Patch(m,
+                    postfix: new HarmonyMethod(typeof(ForkbombRamFix), nameof(Postfix)));
+                KernelFix.Instance.Log.LogDebug($"RAM fix applied to {tn}");
+            }
+        }
+
         public static void Postfix(object __instance, float t)
         {
             if (__instance == null) return;
@@ -17,7 +32,6 @@ namespace KernelFix
             float rate = GetRate(tType);
             float delta = t * rate;
 
-            // 只有原版 (int)delta == 0 时才需要修正
             if ((int)delta > 0) { _accum = 0f; return; }
             if (delta <= 0f) return;
 
@@ -29,7 +43,7 @@ namespace KernelFix
             var f = AccessTools.Field(tType, "ramCost");
             if (f == null) return;
             int current = (int)f.GetValue(__instance);
-            // 检查可用内存是否足够
+
             var osField = AccessTools.Field(tType, "os");
             if (osField != null)
             {
@@ -40,19 +54,13 @@ namespace KernelFix
                     if (ramField != null)
                     {
                         int ramAvail = (int)ramField.GetValue(os);
-                        if (ramAvail < add)
-                        {
-                            // 可用内存不足，不清零（os.runCommand("Completed") 后原版会处理）
-                            // 但至少不能超
-                            _accum = 0f;
-                            return;
-                        }
+                        if (ramAvail < add) { _accum = 0f; return; }
                     }
                 }
             }
+
             current += add;
 
-            // 限制不超过目标值
             string tn = tType.Name;
             if (tn == "DLCTraceSlower")
             {
@@ -82,3 +90,5 @@ namespace KernelFix
         }
     }
 }
+
+
