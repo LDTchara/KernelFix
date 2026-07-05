@@ -5,7 +5,7 @@
     <LangVersion>11</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <NoWarn>CS8500;MSB3277</NoWarn>
+    <NoWarn>CS8500</NoWarn>
     <AnalysisMode>Recommended</AnalysisMode>
     <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
@@ -48,19 +48,6 @@
       <Private>false</Private>
     </Reference>
   </ItemGroup>
-
-	<ItemGroup>
-		<!-- NuGet 包：ImeSharp 及其传递依赖 -->
-		<PackageReference Include="ImeSharp" Version="1.4.1" />
-		<!-- Costura.Fody 用于嵌入依赖 -->
-		<PackageReference Include="Costura.Fody" Version="5.7.0">
-			<PrivateAssets>all</PrivateAssets>
-		</PackageReference>
-	</ItemGroup>
-
-	<ItemGroup>
-	  <Folder Include="Images\" />
-	</ItemGroup>
 
 	<PropertyGroup>
 		<AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
