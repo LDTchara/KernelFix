@@ -8,11 +8,11 @@ KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修�
 
 ### ✨ 功能简介
 
-#### 💾 高帧率 RAM 截断修复
-- 修复 ForkBomb / SignalScramble / ExtensionSequencer 在高刷新率屏幕（144Hz+）下 RAM 占用停止增加的问题。
+#### 💾 高帧率 (int) 截断修复
+- 修复 ForkBomb / DLCTraceSlower / Sequencer / Shell / Notes 在高刷新率屏幕（144Hz+）下 RAM 占用停止增加的问题。
 - 根因：原版使用 `int num = (int)(t * RAM_CHANGE_PS)`，高帧率下 `t` 变小导致乘积被 `int` 截断为 0。
-- 修复：累积小数部分，积满 1 后补偿，并检查 `ramAvaliable` 上限。
-- 可在 `BepInEx/config/com.LDTchara.KernelFix.cfg` 中通过 `EnableForkbombRamFix` 开关关闭。
+- 修复：累积小数部分，积满 1 后按方向（升/降）补偿 ramCost，并遵守 `ramAvaliable` 上限。
+- 可在 `BepInEx/config/com.LDTchara.KernelFix.cfg` 中通过 `EnableRamTruncationFix` 开关关闭。
 
 #### 🖥️ 高 DPI 修复
 - 在游戏窗口创建前调用 `SetProcessDPIAware()`。
@@ -63,11 +63,11 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
 
 ### ✨ Features
 
-#### 💾 High-FPS RAM Truncation Fix
-- Fixes ForkBomb / SignalScramble / ExtensionSequencer RAM stalling on high-refresh-rate monitors (144Hz+).
+#### 💾 High-FPS (int) Truncation Fix
+- Fixes ForkBomb / DLCTraceSlower / Sequencer / Shell / Notes RAM stalling on high-refresh-rate monitors (144Hz+).
 - Root cause: `int num = (int)(t * RAM_CHANGE_PS)` truncates to 0 when `t` becomes small at high frame rates.
-- Fix: accumulates fractional remainder, compensates when ≥ 1, and respects `ramAvaliable` cap.
-- Toggle via `EnableForkbombRamFix` in `BepInEx/config/com.LDTchara.KernelFix.cfg`.
+- Fix: accumulates fractional remainder, compensates (increase/decrease) toward target, enforces `ramAvaliable` cap.
+- Toggle via `EnableRamTruncationFix` in `BepInEx/config/com.LDTchara.KernelFix.cfg`.
 
 #### 🖥️ High‑DPI Fix
 - Calls `SetProcessDPIAware()` before the game window is created.
