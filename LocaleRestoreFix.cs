@@ -15,8 +15,8 @@ namespace KernelFix;
 ///
 /// Fix: remember the pre-extension locale on entry, restore it at both exits:
 ///   A) ExtensionsMenuScreen.ExitExtensionsScreen  (back from the extension picker)
-///   B) MainMenu.resetOS()                          (quit in-extension game; common
-///      hub for all "back to main menu" paths)
+///   B) OS.quitGame()                               (quit in-extension game; the
+///      only exit point for an OS session)
 ///
 /// [CN] QOL：退出扩展时恢复主游戏语言。原版进入扩展时会切换到扩展语言
 /// （ActivateExtensionPage → ActivateLocale(info.Language)），但退出时不恢复——
@@ -24,7 +24,7 @@ namespace KernelFix;
 ///
 /// 修复：进入时记住主语言，两条退出路径都恢复：
 ///   A) ExtensionsMenuScreen.ExitExtensionsScreen（扩展选择菜单返回）
-///   B) MainMenu.resetOS()（扩展游戏内退出；所有回主菜单路径的公共汇合点）
+///   B) OS.quitGame()（扩展游戏内退出；OS 会话结束的唯一出口）
 /// </summary>
 internal static class LocaleRestoreFix
 {
@@ -64,11 +64,15 @@ internal static class LocaleRestoreFix
                         System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)));
         }
 
-        // ---- 恢复点 B：游戏内退出回主菜单（公共汇合点）----
-        var resetOS = AccessTools.Method(typeof(MainMenu), "resetOS");
-        if (resetOS != null)
+        // ---- 恢复点 B：扩展游戏内点 X 退出（OS 会话结束）----
+        // 挂 OS.quitGame 而非 MainMenu.resetOS：resetOS 在"开始新游戏"委托里
+        // 也会被调用（MainMenu.cs StartNewGameForUsernameAndPass），会把
+        // _previousLocale 提前消耗掉导致真正退出时失效。
+        // quitGame 只在确认退出时触发，是结束 OS 会话的唯一出口。
+        var quitGame = AccessTools.Method(typeof(OS), "quitGame");
+        if (quitGame != null)
         {
-            harmony.Patch(resetOS,
+            harmony.Patch(quitGame,
                 postfix: new HarmonyMethod(
                     typeof(LocaleRestoreFix).GetMethod(
                         nameof(RestoreLocalePostfix),
