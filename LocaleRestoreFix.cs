@@ -92,6 +92,25 @@ internal static class LocaleRestoreFix
                         System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)));
         }
 
+        // ---- 防污染：扩展会话期间写 Settings.txt 时用主语言 ----
+        // 原版 writeStatusFile 会把当前 Settings.ActiveLocale 写入 Settings.txt 的
+        // defaultLocale（SettingsLoader.cs:174）。扩展期间 ActiveLocale 是扩展语言，
+        // 玩家在扩展里保存（SaveFileManager → writeStatusFile）就会污染磁盘，
+        // 重启后语言被读回扩展语言。prefix 临时换成主语言写盘，postfix 恢复。
+        var writeStatus = AccessTools.Method(typeof(SettingsLoader), "writeStatusFile");
+        if (writeStatus != null)
+        {
+            harmony.Patch(writeStatus,
+                prefix: new HarmonyMethod(
+                    typeof(LocaleRestoreFix).GetMethod(
+                        nameof(ProtectWritePrefix),
+                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)),
+                postfix: new HarmonyMethod(
+                    typeof(LocaleRestoreFix).GetMethod(
+                        nameof(ProtectWritePostfix),
+                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic)));
+        }
+
         KernelFix.Instance.Log.LogDebug("[KF] Locale restore fix applied.");
     }
 
@@ -142,5 +161,30 @@ internal static class LocaleRestoreFix
         LocaleActivator.ActivateLocale(_previousLocale, Game1.getSingleton().Content);
         _previousLocale = null;
         _showingDetail = false;
+    }
+
+    /// <summary>
+    /// [EN] Before SettingsLoader.writeStatusFile: if we are inside an extension
+    ///      session (_previousLocale != null), temporarily swap ActiveLocale to the
+    ///      main-game locale so Settings.txt's defaultLocale is not polluted with
+    ///      the extension's language (which would otherwise be read back on restart).
+    /// [CN] 在 SettingsLoader.writeStatusFile 之前：若处于扩展会话
+    ///      （_previousLocale != null），临时把 ActiveLocale 换成主语言，
+    ///      避免 Settings.txt 的 defaultLocale 被扩展语言污染（重启时被读回）。
+    /// </summary>
+    private static void ProtectWritePrefix(out string __state)
+    {
+        __state = Settings.ActiveLocale;
+        if (_previousLocale != null)
+            Settings.ActiveLocale = _previousLocale;
+    }
+
+    /// <summary>
+    /// [EN] Restore the extension locale after writeStatusFile finished.
+    /// [CN] writeStatusFile 写盘完成后恢复扩展语言。
+    /// </summary>
+    private static void ProtectWritePostfix(string __state)
+    {
+        Settings.ActiveLocale = __state;
     }
 }
