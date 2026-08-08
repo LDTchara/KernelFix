@@ -9,11 +9,12 @@ namespace KernelFix
     {
         public const string PluginGuid = "com.LDTchara.KernelFix";
         public const string PluginName = "KernelFix";
-        public const string PluginVersion = "1.1.1";
+        public const string PluginVersion = "1.1.2";
 
         public static ConfigEntry<bool> EnableDPIFix;
         public static ConfigEntry<bool> EnableRamTruncationFix;
         public static ConfigEntry<bool> EnableIRCDelayFix;
+        public static ConfigEntry<bool> EnableLocaleRestoreFix;
         public static KernelFix Instance { get; private set; }
 
         public override bool Load()
@@ -26,6 +27,8 @@ namespace KernelFix
                 "Fix (int) truncation at high fps for ForkBomb, Sequencer, Shell, etc. / 修复高帧率下 ForkBomb 等的 (int) 截断。");
             EnableIRCDelayFix = Config.Bind("General", "EnableIRCDelayFix", true,
                 "Fix SAAddIRCMessage negative-delay timestamps. Disable to restore vanilla future-message behavior. / 修复 IRC 负延迟时间戳。关闭以恢复原版的未来消息行为。");
+            EnableLocaleRestoreFix = Config.Bind("General", "EnableLocaleRestoreFix", true,
+                "Restore the main-game language after leaving an extension. / 退出扩展后恢复主游戏语言。");
 
             if (EnableDPIFix.Value) DpiFix.Apply();
             else Log.LogDebug("DPI fix disabled by config.");
@@ -34,6 +37,8 @@ namespace KernelFix
             IRCFix.Apply();
             if (EnableIRCDelayFix.Value) Log.LogDebug("IRC delay fix active.");
             else Log.LogDebug("IRC delay fix disabled by config.");
+            if (EnableLocaleRestoreFix.Value) LocaleRestoreFix.Apply();
+            else Log.LogDebug("Locale restore fix disabled by config.");
             OpenALFix.Apply();
 
             Console.ForegroundColor = ConsoleColor.Cyan;
