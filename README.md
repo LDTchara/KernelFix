@@ -31,6 +31,11 @@ KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修�
 - 根因：FNA 的 `alcGetString` 在某些容器/无音频环境下挂起或崩溃。
 - 无功能性损失（HN 没有音频设备切换功能）。
 
+#### 🌐 退出扩展恢复语言
+- 原版进入扩展时会切换到扩展的语言，但退出后不会恢复主游戏语言。
+- 修复：进入扩展时记住主语言，在返回扩展列表 / 返回主菜单 / 游戏内退出三条路径上自动恢复。
+- 可通过 `EnableLocaleRestoreFix` 开关关闭。
+
 ### 📦 安装方法
 1. 确保已安装 **Pathfinder** 框架（它自带了 BepInEx）。
 2. 下载 `KernelFix.dll`。
@@ -86,6 +91,11 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
 - Root cause: FNA's `alcGetString` hangs or crashes in containerized or audio-less environments.
 - No functional loss (Hacknet does not have an audio device switching feature).
 - Always active, no toggle needed.
+
+#### 🌐 Locale Restore on Extension Exit
+- Vanilla switches to the extension's language on entry but never restores the main-game locale on exit.
+- Fix: remembers the pre-extension locale and restores it on all three exit paths (back to extension list, back to main menu, quit in-extension game).
+- Toggle via `EnableLocaleRestoreFix`.
 
 ### 📦 Installation
 1. Make sure **Pathfinder** is installed (it bundles BepInEx).
