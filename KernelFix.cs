@@ -9,7 +9,7 @@ namespace KernelFix
     {
         public const string PluginGuid = "com.LDTchara.KernelFix";
         public const string PluginName = "KernelFix";
-        public const string PluginVersion = "1.1.2";
+        public const string PluginVersion = "1.2.0";
 
         public static ConfigEntry<bool> EnableDPIFix;
         public static ConfigEntry<bool> EnableRamTruncationFix;
