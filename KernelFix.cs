@@ -9,12 +9,13 @@ namespace KernelFix
     {
         public const string PluginGuid = "com.LDTchara.KernelFix";
         public const string PluginName = "KernelFix";
-        public const string PluginVersion = "1.2.1";
+        public const string PluginVersion = "1.2.2";
 
         public static ConfigEntry<bool> EnableDPIFix;
         public static ConfigEntry<bool> EnableRamTruncationFix;
         public static ConfigEntry<bool> EnableIRCDelayFix;
         public static ConfigEntry<bool> EnableLocaleRestoreFix;
+        public static ConfigEntry<bool> EnableDHSMissionFix;
         public static KernelFix Instance { get; private set; }
 
         public override bool Load()
@@ -29,6 +30,8 @@ namespace KernelFix
                 "Fix SAAddIRCMessage negative-delay timestamps. Disable to restore vanilla future-message behavior. / 修复 IRC 负延迟时间戳。关闭以恢复原版的未来消息行为。");
             EnableLocaleRestoreFix = Config.Bind("General", "EnableLocaleRestoreFix", true,
                 "Restore the main-game language after leaving an extension. / 退出扩展后恢复主游戏语言。");
+            EnableDHSMissionFix = Config.Bind("General", "EnableDHSMissionFix", true,
+                "Fix DHS (Labyrinths contract hub) stuck missions and NullReference crash after completing a contract under Pathfinder. / 修复 Pathfinder 下 DHS 合约完成后任务卡住与 NullReference 崩溃。");
 
             if (EnableDPIFix.Value) DpiFix.Apply();
             else Log.LogDebug("DPI fix disabled by config.");
@@ -39,6 +42,8 @@ namespace KernelFix
             else Log.LogDebug("IRC delay fix disabled by config.");
             if (EnableLocaleRestoreFix.Value) LocaleRestoreFix.Apply();
             else Log.LogDebug("Locale restore fix disabled by config.");
+            if (EnableDHSMissionFix.Value) DHSMissionFix.Apply();
+            else Log.LogDebug("DHS mission fix disabled by config.");
             OpenALFix.Apply();
 
             Console.ForegroundColor = ConsoleColor.Cyan;
