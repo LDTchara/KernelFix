@@ -36,6 +36,12 @@ KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修�
 - 修复：进入扩展时记住主语言，在返回扩展列表 / 返回主菜单 / 游戏内退出三条路径上自动恢复。
 - 可通过 `EnableLocaleRestoreFix` 开关关闭。
 
+#### 🗂️ DHS 任务卡住与崩溃修复
+- 修复在 Pathfinder 下完成 Labyrinths DHS 合约后任务残留卡住、以及再次点击完成触发 `NullReferenceException` 的问题。
+- 根因：Pathfinder 的 `AutoClearMissionsOnSingleComplete` 补丁在 `autoClearMissionsOnPlayerComplete="false"` 的节点上，完成任务后会把完整任务列表（含刚完成的任务）恢复进 `ActiveMissions`，而 `os.currentMission` 已被置空 —— 残留任务无法消失，对其他任务点"完成"即红错。
+- 修复：完成成功后自动移除已完成任务并重新序列化剩余任务；`os.currentMission` 为空时自动补上被点击的任务，杜绝空引用崩溃。
+- 可通过 `EnableDHSMissionFix` 开关关闭。
+
 ### 📦 安装方法
 1. 确保已安装 **Pathfinder** 框架（它自带了 BepInEx）。
 2. 下载 `KernelFix.dll`。
@@ -96,6 +102,12 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
 - Vanilla switches to the extension's language on entry but never restores the main-game locale on exit.
 - Fix: remembers the pre-extension locale and restores it on all three exit paths (back to extension list, back to main menu, quit in-extension game).
 - Toggle via `EnableLocaleRestoreFix`.
+
+#### 🗂️ DHS Stuck-Mission & Crash Fix
+- Fixes stuck missions in the Labyrinths DHS contract hub after completing a contract under Pathfinder, and the `NullReferenceException` when clicking Complete again.
+- Root cause: Pathfinder's `AutoClearMissionsOnSingleComplete` patch — on nodes with `autoClearMissionsOnPlayerComplete="false"` — restores the full mission list (including the just-completed mission) into `ActiveMissions` after completion, while `os.currentMission` has already been nulled. The completed mission can never disappear, and clicking Complete on another mission crashes.
+- Fix: after a successful completion, removes completed missions and re-serializes the survivors; when `os.currentMission` is null it is filled with the clicked mission, eliminating the null-deref crash.
+- Toggle via `EnableDHSMissionFix`.
 
 ### 📦 Installation
 1. Make sure **Pathfinder** is installed (it bundles BepInEx).
