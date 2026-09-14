@@ -17,7 +17,6 @@ namespace KernelFix
         public static ConfigEntry<bool> EnableLocaleRestoreFix;
         public static ConfigEntry<bool> EnableDHSMissionFix;
         public static ConfigEntry<bool> EnableExtensionTestCleanupFix;
-        public static ConfigEntry<bool> EnableThemeUpdateNullFix;
         public static KernelFix Instance { get; private set; }
 
         public override bool Load()
@@ -36,8 +35,6 @@ namespace KernelFix
                 "Fix DHS (Labyrinths contract hub) stuck missions and NullReference crash after completing a contract under Pathfinder. / 修复 Pathfinder 下 DHS 合约完成后任务卡住与 NullReference 崩溃。");
             EnableExtensionTestCleanupFix = Config.Bind("General", "EnableExtensionTestCleanupFix", true,
                 "Clear the stale OS.currentInstance left behind by the editor's extension verification tests (which breaks main-menu text input in IME plugins). / 清理编辑器扩展验证测试残留的 OS.currentInstance（该残留会让 IME 插件在主菜单吞掉输入）。");
-            EnableThemeUpdateNullFix = Config.Bind("General", "EnableThemeUpdateNullFix", true,
-                "Fix ThemeManager.Update NullReference crash when no OS instance exists (crashes the game from the main menu after an OS session). / 修复无 OS 实例时 ThemeManager.Update 的空引用崩溃（OS 会话结束后回主菜单必崩）。");
 
             if (EnableDPIFix.Value) DpiFix.Apply();
             else Log.LogDebug("DPI fix disabled by config.");
@@ -52,8 +49,6 @@ namespace KernelFix
             else Log.LogDebug("DHS mission fix disabled by config.");
             if (EnableExtensionTestCleanupFix.Value) ExtensionTestCleanupFix.Apply();
             else Log.LogDebug("Extension test cleanup fix disabled by config.");
-            if (EnableThemeUpdateNullFix.Value) ThemeUpdateNullFix.Apply();
-            else Log.LogDebug("Theme update null fix disabled by config.");
             OpenALFix.Apply();
 
             Console.ForegroundColor = ConsoleColor.Cyan;
