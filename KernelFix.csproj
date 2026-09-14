@@ -49,8 +49,14 @@
     </Reference>
   </ItemGroup>
 
-	<PropertyGroup>
-		<AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-		<GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+	<!-- Release 发布产物只保留 KernelFix.dll：
+	     - 不生成 .pdb 调试符号（DebugType none）
+	     - 不生成 .dll.config 绑定重定向（CLR 只读宿主 exe 的 .config，
+	       插件 DLL 的 .config 不会被加载，只是噪音） -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<DebugType>none</DebugType>
+		<DebugSymbols>false</DebugSymbols>
+		<AutoGenerateBindingRedirects>false</AutoGenerateBindingRedirects>
+		<GenerateBindingRedirectsOutputType>false</GenerateBindingRedirectsOutputType>
 	</PropertyGroup>
 </Project>

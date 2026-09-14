@@ -55,7 +55,7 @@ internal static class ExtensionTestCleanupFix
             prefix: new HarmonyMethod(typeof(ExtensionTestCleanupFix).GetMethod(nameof(Prefix), flags)),
             postfix: new HarmonyMethod(typeof(ExtensionTestCleanupFix).GetMethod(nameof(Postfix), flags)));
 
-        KernelFix.Instance.Log.LogDebug("[KF] ExtTest: patched ExtensionTests.CompleteExtensiontesting");
+        KernelFix.Instance.Log.LogInfo("[KF] ExtTest: patched ExtensionTests.CompleteExtensiontesting");
     }
 
     /// <summary>
@@ -70,17 +70,47 @@ internal static class ExtensionTestCleanupFix
     /// <summary>
     /// [EN] Restore the snapshot when it is still a live screen; otherwise clear
     ///      the reference so nothing reads a hidden test OS afterwards.
-    /// [CN] 快照仍是活动中屏幕时恢复；否则清空引用，避免后续读到已隐藏的测试 OS。
+    ///      Uses the ScreenManager screen list instead of GameScreen.IsActive:
+    ///      RemoveScreen only unloads and drops the screen from the list without
+    ///      updating its screenState, so a removed screen never receives Update
+    ///      again and its state stays TransitionOn/Active forever.
+    /// [CN] 快照仍在屏幕列表中时恢复；否则清空引用，避免后续读到已隐藏的测试 OS。
+    ///      用 ScreenManager 屏幕列表而非 GameScreen.IsActive 判断：
+    ///      RemoveScreen 只卸载并从列表移除、不更新 screenState，被移除的屏幕
+    ///      不再收到 Update，状态永远停在 TransitionOn/Active。
     /// </summary>
     public static void Postfix(OS __state)
     {
         try
         {
-            OS.currentInstance = (__state != null && __state.IsActive) ? __state : null;
+            OS.currentInstance = (__state != null && IsScreenLive(__state)) ? __state : null;
         }
         catch
         {
             OS.currentInstance = null;
+        }
+    }
+
+    /// <summary>
+    /// [EN] Whether the screen is still present in its ScreenManager's screen list.
+    /// [CN] 该屏幕是否仍在 ScreenManager 的屏幕列表中。
+    /// </summary>
+    private static bool IsScreenLive(GameScreen screen)
+    {
+        try
+        {
+            var sm = screen.ScreenManager;
+            if (sm == null) return false;
+            var screens = sm.GetScreens();
+            for (int i = 0; i < screens.Length; i++)
+            {
+                if (ReferenceEquals(screens[i], screen)) return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
         }
     }
 }
