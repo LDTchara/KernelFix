@@ -42,6 +42,18 @@ KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修�
 - 修复：完成成功后自动移除已完成任务并重新序列化剩余任务；`os.currentMission` 为空时自动补上被点击的任务，杜绝空引用崩溃。
 - 可通过 `EnableDHSMissionFix` 开关关闭。
 
+#### 🧹 扩展验证测试残留清理
+- 修复在扩展编辑器点击 **Run Verification Tests** 后，主菜单输入框无法输入的问题。
+- 根因：原版测试流程只 `RemoveScreen(测试OS)`，不做 `OS.quitGame` 式收尾 —— 残留实例仍被 `OS.currentInstance` 引用且 `HasExitedAndEnded` 仍为 `false`（“假装还活着”），任何按该状态判断的插件都会误判（如 IME 插件以为终端活跃而吞掉主菜单输入）。
+- 修复：测试结束后，对已从屏幕列表移除的残留实例按 `quitGame` 语义收尾（标记 `HasExitedAndEnded = true` 并保留引用，不置 null）。
+- 可通过 `EnableExtensionTestCleanupFix` 开关关闭。
+
+#### 🌐 Pathfinder 内容路径本地化修复
+- 修复 Pathfinder 下 Labyrinths DLC 部分剧情显示英文（Steam 原版正常显示中文）的问题。
+- 根因：Pathfinder 用 `ContentFilePath()` 替换了原版带本地化的路径解析（如 `RunnableConditionalActions.LoadIntoOS`），而 `ContentFilePath()` 只拼接路径前缀、从不查找本地化副本 —— 于是 ActionScript、任务 goals、自定义主题等即使存在中文版也会读取英文原文件。
+- 修复：为 `ContentFilePath()` 补上原版语义的本地化查询（无本地化副本时原样返回，扩展模式不受影响）。
+- 可通过 `EnableContentFilePathLocaleFix` 开关关闭。
+
 ### 📦 安装方法
 1. 确保已安装 **Pathfinder** 框架（它自带了 BepInEx）。
 2. 下载 `KernelFix.dll`。
@@ -108,6 +120,18 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
 - Root cause: Pathfinder's `AutoClearMissionsOnSingleComplete` patch — on nodes with `autoClearMissionsOnPlayerComplete="false"` — restores the full mission list (including the just-completed mission) into `ActiveMissions` after completion, while `os.currentMission` has already been nulled. The completed mission can never disappear, and clicking Complete on another mission crashes.
 - Fix: after a successful completion, removes completed missions and re-serializes the survivors; when `os.currentMission` is null it is filled with the clicked mission, eliminating the null-deref crash.
 - Toggle via `EnableDHSMissionFix`.
+
+#### 🧹 Extension Verification-Test Leftover Cleanup
+- Fixes the main-menu textboxes accepting no input after clicking **Run Verification Tests** in the extension editor.
+- Root cause: the vanilla test flow only calls `RemoveScreen(testOS)` and never performs `OS.quitGame`'s teardown — the leftover stays referenced by `OS.currentInstance` with `HasExitedAndEnded` still `false` ("pretending to be alive"), so any plugin judging by that state is misled (IME plugins, for example, think the terminal is active and swallow every main-menu keystroke).
+- Fix: after the tests, finalize any leftover already dropped from the screen list with `quitGame` semantics (set `HasExitedAndEnded = true` and keep the reference — never null it).
+- Toggle via `EnableExtensionTestCleanupFix`.
+
+#### 🌐 Pathfinder Content-Path Localization Fix
+- Fixes parts of the Labyrinths DLC story showing English under Pathfinder (Steam vanilla shows Chinese correctly).
+- Root cause: Pathfinder replaced vanilla's localized path resolution with `ContentFilePath()` (e.g. in `RunnableConditionalActions.LoadIntoOS`), and `ContentFilePath()` only concatenates a prefix — it never looks for a localized copy. ActionScripts, mission goal files and custom themes therefore read the English original even when a localized file exists.
+- Fix: append vanilla's localized lookup to `ContentFilePath()` (returns the input unchanged when no localized copy exists; extension mode is unaffected).
+- Toggle via `EnableContentFilePathLocaleFix`.
 
 ### 📦 Installation
 1. Make sure **Pathfinder** is installed (it bundles BepInEx).
