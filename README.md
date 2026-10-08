@@ -54,6 +54,21 @@ KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修�
 - 修复：为 `ContentFilePath()` 补上原版语义的本地化查询（无本地化副本时原样返回，扩展模式不受影响）。
 - 可通过 `EnableContentFilePathLocaleFix` 开关关闭。
 
+### 🧪 实验性功能（**仅供测试**，默认关闭）
+
+> ⚠️ 下面两项**不属于常规修复**，只是为了排查/对比与帧率相关的行为而提供，**默认均关闭**。它们会改变游戏的帧率与计时表现，请只在测试时开启，测完请改回默认。两项都在配置文件的 `[Experimental]` 段。
+
+#### 🖥️ 取消垂直同步（`DisableVSync`，默认关）
+- 原版从不设置 VSync，因此始终继承 FNA 的默认行为：`SynchronizeWithVerticalRetrace = true` + `PresentationInterval.Default`，在 Windows 上会请求**自适应垂直同步**（`swapInterval = -1`，即启动日志里的 `Using EXT_swap_control_tear VSync!`），游戏内没有任何开关可改。
+- 开启后：每次图形设备变更（启动、改分辨率、切换全屏）都会强制 `swapInterval = 0`，帧率不再有上限。
+- **副作用**：画面会出现撕裂；帧率不再受限后，游戏里**所有按帧推进的计时都会变快**（RAM 消耗即为典型，`EnableRamTruncationFix` 补偿的正是该现象的另一面），可能导致扩展剧情/计时异常。
+- 建议配合下面的限帧一起使用；驱动面板（如 NVIDIA 控制面板）的垂直同步设置可能仍然优先于本插件的请求。
+
+#### ⏱️ 帧率限制（`EnableFpsLimit`，默认关 / `FpsLimit`，默认 60）
+- 原版 `IsFixedTimeStep = false`，FNA 自身不做任何帧率限制，实际帧率由显示器的垂直同步决定。
+- 开启后：主循环（`Game.Tick`）尾部会等待到目标周期，把帧率压在 `FpsLimit` 以内，用于检查与帧率相关的行为。
+- `FpsLimit <= 0` 表示不限帧；未取消垂直同步时实际帧率仍受显示器约束。
+
 ### 📦 安装方法
 1. 确保已安装 **Pathfinder** 框架（它自带了 BepInEx）。
 2. 下载 `KernelFix.dll`。
@@ -132,6 +147,21 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
 - Root cause: Pathfinder replaced vanilla's localized path resolution with `ContentFilePath()` (e.g. in `RunnableConditionalActions.LoadIntoOS`), and `ContentFilePath()` only concatenates a prefix — it never looks for a localized copy. ActionScripts, mission goal files and custom themes therefore read the English original even when a localized file exists.
 - Fix: append vanilla's localized lookup to `ContentFilePath()` (returns the input unchanged when no localized copy exists; extension mode is unaffected).
 - Toggle via `EnableContentFilePathLocaleFix`.
+
+### 🧪 Experimental Features (**TEST ONLY**, off by default)
+
+> ⚠️ These two are **not regular fixes**. They exist to probe and compare frame-rate-dependent behaviour, and **both default to off**. They change the game's frame rate and timing, so enable them only while testing and restore the defaults afterwards. Both live in the `[Experimental]` section of the config file.
+
+#### 🖥️ Disable VSync (`DisableVSync`, default off)
+- Vanilla never sets VSync and therefore always inherits FNA's default: `SynchronizeWithVerticalRetrace = true` with `PresentationInterval.Default`, which on Windows requests **adaptive VSync** (`swapInterval = -1`, the `Using EXT_swap_control_tear VSync!` startup log line). The game itself exposes no switch for it.
+- When enabled: every graphics device change (startup, resolution change, fullscreen toggle) forces `swapInterval = 0`, removing the frame-rate ceiling.
+- **Side effects**: screen tearing, and — with no frame-rate bound — **every frame-based timer in the game runs faster** (RAM consumption is the typical example; `EnableRamTruncationFix` compensates for the other side of the same effect), which can skew extension story/timer behaviour.
+- Best paired with the limiter below. A driver-side override (e.g. the NVIDIA control panel) may still take precedence over the plugin's request.
+
+#### ⏱️ Frame Rate Limit (`EnableFpsLimit`, default off / `FpsLimit`, default 60)
+- Vanilla runs with `IsFixedTimeStep = false`, so FNA never limits the frame rate — the effective rate is whatever the display's VSync allows.
+- When enabled: the main loop (`Game.Tick`) waits for the target period at the end of each frame, capping the rate at `FpsLimit`, which is useful when checking frame-rate-dependent behaviour.
+- `FpsLimit <= 0` disables the limiter; without disabling VSync the effective rate stays display-bound.
 
 ### 📦 Installation
 1. Make sure **Pathfinder** is installed (it bundles BepInEx).
