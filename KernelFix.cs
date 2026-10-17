@@ -43,8 +43,6 @@ namespace KernelFix
                 "Enable high-DPI fix. Disable if fullscreen appears too small. / 启用高 DPI 修复。全屏时画面过小可关闭。");
             EnableRamTruncationFix = Config.Bind("General", "EnableRamTruncationFix", true,
                 "Fix (int) truncation at high fps for ForkBomb, Sequencer, Shell, etc. / 修复高帧率下 ForkBomb 等的 (int) 截断。");
-            EnableRamTruncationTrace = Config.Bind("General", "EnableRamTruncationTrace", false,
-                "Diagnostic only: log every ramCost change made by the RAM truncation fix. / 仅诊断：记录 RAM 截断修复每次改 ramCost 的细节。");
             EnableIRCDelayFix = Config.Bind("General", "EnableIRCDelayFix", true,
                 "Fix SAAddIRCMessage negative-delay timestamps. Disable to restore vanilla future-message behavior. / 修复 IRC 负延迟时间戳。关闭以恢复原版的未来消息行为。");
             EnableLocaleRestoreFix = Config.Bind("General", "EnableLocaleRestoreFix", true,
@@ -65,6 +63,8 @@ namespace KernelFix
                 "TEST ONLY. Cap the main loop at FpsLimit frames per second. Without disabling VSync the effective frame rate is still bounded by the display. Off by default. / 仅供测试。把主循环限制在 FpsLimit 帧/秒。未取消垂直同步时，实际帧率仍受显示器约束。默认关闭。");
             FpsLimit = Config.Bind("Experimental", "FpsLimit", 60,
                 "TEST ONLY. Frame-rate cap in frames per second for EnableFpsLimit. Values <= 0 disable the limiter. / 仅供测试。EnableFpsLimit 的帧率上限（帧/秒）。<= 0 表示不限帧。");
+            EnableRamTruncationTrace = Config.Bind("Experimental", "EnableRamTruncationTrace", false,
+                "TEST ONLY (diagnostic). Log every ramCost change made by the RAM truncation fix, together with its target and the free RAM it saw. Useful when investigating \"RAM keeps growing past the cap\" reports. Off by default. / 仅供测试（诊断）。记录 RAM 截断修复每次改 ramCost 的细节（目标值与当时余量），用于排查「RAM 一直涨、无视上限」的报告。默认关闭。");
 
             if (DisableVSync.Value || EnableFpsLimit.Value) DisplayTweaks.Apply();
             else Log.LogDebug("Experimental display tweaks disabled by config (default).");

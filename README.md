@@ -16,7 +16,6 @@ KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修�
   余量不够一步就不涨（与原版 `if (os.ramAvaliable >= num)` 等价）；不写 `os.ramAvaliable`；
   正在退场的程序（`isExiting`）一概不碰，退场动画仍由原版 `ExeModule.Update` 负责。
   这样即使多个程序同时爬升 / 中途关闭窗口，也不会把「已用内存」顶过总内存。
-- 诊断：`EnableRamTruncationTrace`（默认关）可把每次 `ramCost` 变更连同 `target`/`avail` 写进日志。
 - 总开关：`EnableRamTruncationFix`（默认开）。
 
 #### 🖥️ 高 DPI 修复
@@ -115,7 +114,6 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
   (equivalent to vanilla's `if (os.ramAvaliable >= num)` guard); it never writes `os.ramAvaliable`, and it
   never touches an exe that is exiting (the vanilla `ExeModule.Update` fade owns that). So even with several
   programs ramping at once — or a window being closed mid-ramp — "used RAM" cannot be pushed past the total.
-- Diagnostics: `EnableRamTruncationTrace` (default off) logs every `ramCost` change with `target`/`avail`.
 - Toggle the whole fix via `EnableRamTruncationFix` (default on).
 
 #### 🖥️ High‑DPI Fix
@@ -197,6 +195,14 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
    dotnet build KernelFix.sln -c Release
    ```
 3. The project references (Harmony, BepInEx, FNA, etc.) point to the `libs` folder inside your Hacknet installation; adjust them if necessary.
+
+#### 🧾 RAM 修复诊断日志（`EnableRamTruncationTrace`，默认关）
+- 仅用于排查：记录 RAM 截断修复每次修改 `ramCost` 的细节（类型名、旧值→新值、目标值、当时余量）。
+- 平时保持关闭；需要分析「RAM 一直涨」类问题时再打开，然后重启游戏。
+
+#### 🧾 RAM Fix Diagnostics (`EnableRamTruncationTrace`, default off)
+- Diagnostic only: logs every `ramCost` change made by the RAM truncation fix (type name, old → new value, target, free RAM it saw).
+- Keep it off in normal use; turn it on and restart the game when investigating "RAM keeps growing" reports.
 
 ### 📄 License
 
