@@ -11,8 +11,13 @@ KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修�
 #### 💾 高帧率 (int) 截断修复
 - 修复 ForkBomb / DLCTraceSlower / Sequencer / Shell / Notes 在高刷新率屏幕（144Hz+）下 RAM 占用停止增加的问题。
 - 根因：原版使用 `int num = (int)(t * RAM_CHANGE_PS)`，高帧率下 `t` 变小导致乘积被 `int` 截断为 0。
-- 修复：累积小数部分，积满 1 后按方向（升/降）补偿 ramCost，并遵守 `ramAvaliable` 上限。
-- 可在 `BepInEx/config/com.LDTchara.KernelFix.cfg` 中通过 `EnableRamTruncationFix` 开关关闭。
+- 修复：按实例累积小数部分，积满 1 后按原版方向（升/降）补偿 `ramCost`。
+- **不改变原版账本**：补偿前用「`totalRam` − 当前所有程序的 `ramCost`」**现算**真实余量；
+  余量不够一步就不涨（与原版 `if (os.ramAvaliable >= num)` 等价）；不写 `os.ramAvaliable`；
+  正在退场的程序（`isExiting`）一概不碰，退场动画仍由原版 `ExeModule.Update` 负责。
+  这样即使多个程序同时爬升 / 中途关闭窗口，也不会把「已用内存」顶过总内存。
+- 诊断：`EnableRamTruncationTrace`（默认关）可把每次 `ramCost` 变更连同 `target`/`avail` 写进日志。
+- 总开关：`EnableRamTruncationFix`（默认开）。
 
 #### 🖥️ 高 DPI 修复
 - 在游戏窗口创建前调用 `SetProcessDPIAware()`。
@@ -104,8 +109,14 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
 #### 💾 High-FPS (int) Truncation Fix
 - Fixes ForkBomb / DLCTraceSlower / Sequencer / Shell / Notes RAM stalling on high-refresh-rate monitors (144Hz+).
 - Root cause: `int num = (int)(t * RAM_CHANGE_PS)` truncates to 0 when `t` becomes small at high frame rates.
-- Fix: accumulates fractional remainder, compensates (increase/decrease) toward target, enforces `ramAvaliable` cap.
-- Toggle via `EnableRamTruncationFix` in `BepInEx/config/com.LDTchara.KernelFix.cfg`.
+- Fix: accumulates the fractional remainder per instance and applies the original step in the same direction.
+- **Leaves vanilla bookkeeping untouched**: before compensating it recomputes the true free memory as
+  `totalRam` − the sum of every current program's `ramCost`; when that is below one step it does nothing
+  (equivalent to vanilla's `if (os.ramAvaliable >= num)` guard); it never writes `os.ramAvaliable`, and it
+  never touches an exe that is exiting (the vanilla `ExeModule.Update` fade owns that). So even with several
+  programs ramping at once — or a window being closed mid-ramp — "used RAM" cannot be pushed past the total.
+- Diagnostics: `EnableRamTruncationTrace` (default off) logs every `ramCost` change with `target`/`avail`.
+- Toggle the whole fix via `EnableRamTruncationFix` (default on).
 
 #### 🖥️ High‑DPI Fix
 - Calls `SetProcessDPIAware()` before the game window is created.
@@ -186,3 +197,16 @@ KernelFix is a **Pathfinder / BepInEx global plugin** for **Hacknet** that fixes
    dotnet build KernelFix.sln -c Release
    ```
 3. The project references (Harmony, BepInEx, FNA, etc.) point to the `libs` folder inside your Hacknet installation; adjust them if necessary.
+
+### 📄 License
+
+**MIT-0 (MIT No Attribution)** — see [LICENSE](LICENSE).
+
+You may use, copy, modify, merge, publish, distribute, sublicense and/or sell copies of
+this software **without keeping any attribution notice** and without any conditions.
+The software is provided "as is", without warranty of any kind.
+
+**MIT-0（MIT 无署名）**——详见 [LICENSE](LICENSE)。
+
+你可以自由使用、复制、修改、合并、发布、分发、再许可和/或销售本软件，
+**不需要保留任何署名声明**，也没有任何附加条件。本软件按「原样」提供，不附带任何担保。
