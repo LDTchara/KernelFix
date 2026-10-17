@@ -6,17 +6,50 @@ using Hacknet;
 namespace KernelFix;
 
 /// <summary>
-/// [EN] High-refresh-rate (int) truncation fix.
-/// Runs as a Harmony Postfix after every targeted Update() call. When the
-/// original code computes (int)(t * rate) and gets 0 at high framerates,
-/// this Postfix accumulates the fractional remainder across frames and
-/// compensates ramCost in the correct direction (increase / decrease)
-/// once enough has been collected. Also enforces ramAvaliable caps.
+/// [EN] High-refresh-rate (int)-truncation fix.
 ///
-/// [CN] 高刷新率下 (int) 截断的修复。以 Harmony Postfix 形式运行在
-/// 每个目标 Update() 之后。原版 (int)(t * rate) 在高帧率下结果为 0
-/// 时，此 Postfix 跨帧累积小数部分，攒够后按方向（升/降）补偿
-/// ramCost，并遵守 ramAvaliable 上限。
+/// <para>
+/// Vanilla exes ramp <c>ramCost</c> with <c>int num = (int)(t * rate)</c>. At high refresh
+/// rates (e.g. 240 Hz, <c>t = 1/240</c>, <c>rate = 200</c>) that product is &lt; 1 and gets
+/// truncated to <b>0</b>, so the RAM ramp simply never happens (and the same truncation
+/// corrupts every other frame-based per-second step in those exes).
+/// </para>
+/// <para>
+/// This Postfix accumulates the fractional remainder per instance and, once a whole
+/// megabyte has been collected, applies the original step in the same direction the
+/// vanilla code would have gone. It is deliberately conservative:
+/// </para>
+/// <list type="bullet">
+///   <item>It never touches an exe whose <c>isExiting</c> is set — the vanilla
+///     <c>ExeModule.Update</c> fade owns <c>ramCost</c> during the exit animation.</item>
+///   <item>It never writes <c>os.ramAvaliable</c>. Vanilla recomputes that field from
+///     the sum of all <c>ramCost</c> at the start of every frame; writing it here
+///     would desynchronise the accounting (and a negative value would then silently
+///     disable every later cap check).</item>
+///   <item>If the target cannot be read, or the available RAM is unknown / smaller than
+///     the step, it does nothing this frame — exactly what the vanilla
+///     <c>if (os.ramAvaliable &gt;= num)</c> guard does.</item>
+/// </list>
+///
+/// [CN] 高刷新率下 (int) 截断的修复。
+///
+/// <para>
+/// 原版这些程序用 <c>int num = (int)(t * rate)</c> 爬 RAM。高刷新率下（例如 240Hz，
+/// <c>t = 1/240</c>、<c>rate = 200</c>）乘积小于 1 被截断成 <b>0</b>，于是 RAM 永远不涨
+/// （同一截断也会让这些程序里其它"每秒推进"的按帧计时变慢）。
+/// </para>
+/// <para>
+/// 本 Postfix 按实例累积小数部分，攒够 1MB 后按原版会走的方向补上一步。刻意保持保守：
+/// </para>
+/// <list type="bullet">
+///   <item>**不碰正在退场的程序**（<c>isExiting</c>）：退场时 <c>ramCost</c> 归原版
+///     <c>ExeModule.Update</c> 的淡出逻辑管。</item>
+///   <item>**从不写 <c>os.ramAvaliable</c>**：原版每帧开头都会用它重算
+///     <c>totalRam - Σ ramCost</c>；这里写会打乱账本，一旦写成负值还会让后续所有
+///     上限检查被静默跳过（实测出现过 2480/761 的越界报告）。</item>
+///   <item>目标读不到、或可用内存未知/不够一步，这一帧就**什么都不做** —— 与原版
+///     <c>if (os.ramAvaliable &gt;= num)</c> 的护栏等价。</item>
+/// </list>
 ///
 /// Covered / 覆盖:
 ///   ForkBombExe · DLCTraceSlower · SequencerExe ·
@@ -28,27 +61,22 @@ internal static class RamTruncationFix
     //  [EN] Per-instance accumulators — GC-safe via ConditionalWeakTable
     //  [CN] 每实例独立累积器，GC 安全
     // ===================================================================
-    private static readonly ConditionalWeakTable<object, AccumState> _accums = new();
+    private static readonly ConditionalWeakTable<ExeModule, AccumState> _accums = new();
+
     private sealed class AccumState { public float Frac; }
 
-    // ===================================================================
-    //  [EN] Cached reflection handles
-    //  [CN] 缓存的反射句柄
-    // ===================================================================
+    /// <summary>
+    /// [EN] Diagnostic trace (off by default, <c>EnableRamTruncationTrace</c>).
+    /// [CN] 诊断追踪（默认关，<c>EnableRamTruncationTrace</c>）。
+    /// </summary>
+    public static bool Trace;
 
-    // ramCost is public in ExeModule, accessible via typeof directly
-    private static readonly FieldInfo _ramCostFi =
-        typeof(ExeModule).GetField("ramCost",
-            BindingFlags.Instance | BindingFlags.Public);
-
-    // os/ramAvaliable use AccessTools.Field (same as ForkbombRamFix did) —
-    // typeof(X).GetField fails under ConfuserEx protection.
-    private static readonly Dictionary<Type, FieldInfo> _osFieldCache = new();
-    private static readonly Dictionary<Type, FieldInfo> _ramFieldCache = new();
+    private static int _traceRows;
 
     // ===================================================================
-    //  [EN] RAM change rate table (pixels / sec)
-    //  [CN] 速率表（像素/秒）
+    //  [EN] RAM change rate table (MB / sec) — same constants the vanilla
+    //       Update methods use, so the compensation matches vanilla speed.
+    //  [CN] 速率表（MB/秒）—— 与原版 Update 里用的常量一致，补偿速度才对得上。
     // ===================================================================
     private static readonly Dictionary<Type, float> _rates = new()
     {
@@ -60,31 +88,42 @@ internal static class RamTruncationFix
         { typeof(NotesExe),              350f },
     };
 
+    /// <summary>缓存各类型 <c>targetRamUse</c> 私有字段（读不到返回 null）。</summary>
+    private static readonly Dictionary<Type, FieldInfo> _targetFieldCache = new();
+
     // ===================================================================
     //  Postfix
     // ===================================================================
 
     public static void Postfix(object __instance, float t)
     {
-        if (__instance == null) return;
+        // 直接类型访问：不再用反射读 ramCost / os / isExiting。
+        // 反射读失败曾被静默当成「没有余量」处理，等于关掉上限检查。
+        if (__instance is not ExeModule exe)
+            return;
 
-        var type = __instance.GetType();
+        Type type = exe.GetType();
         if (!_rates.TryGetValue(type, out float rate))
             return;
 
         float delta = t * rate;
 
-        // [EN] Original handled this frame → reset accumulator
-        // [CN] 原版已处理 → 重置累积器
+        // [EN] Vanilla already took a step this frame → reset and stay out of the way.
+        // [CN] 原版这帧已经走了一步 → 清零累积、不掺和。
         if ((int)delta > 0)
         {
-            _accums.GetOrCreateValue(__instance).Frac = 0;
+            _accums.GetOrCreateValue(exe).Frac = 0;
             return;
         }
         if (delta <= 0f)
             return;
 
-        var state = _accums.GetOrCreateValue(__instance);
+        // [EN] Exit animation: ExeModule.Update owns ramCost (baseRamCost * fade).
+        // [CN] 退场动画：ramCost 归 ExeModule.Update 的淡出逻辑，别去对抗它。
+        if (exe.isExiting)
+            return;
+
+        AccumState state = _accums.GetOrCreateValue(exe);
         state.Frac += delta;
 
         int whole = (int)state.Frac;
@@ -92,39 +131,58 @@ internal static class RamTruncationFix
             return;
         state.Frac -= whole;
 
-        int current = (int)_ramCostFi.GetValue(__instance);
-        int target = GetTarget(type, __instance);
+        int current = exe.ramCost;
+        int target = GetTarget(type, exe);
+        // 余量直接按「totalRam − Σ 当前所有 exe 的 ramCost」现算。
+        // 不能信 os.ramAvaliable：那个字段每帧只在开头重算一次，同一帧里多个程序
+        // 一起涨会读到同一个旧值、一起越过上限（实测 14 个 SignalScramble 同时爬升后
+        // 关闭其一 → 771/761）。现算的 Σ 覆盖了淡出中/待移除的程序，不存在滞后。
+        int avail = ComputeFreeRam(exe);
 
-        // Direction check / 方向判断
         if (current < target)
         {
-            // Increase / 上升
-            int ramAvail = ReadAvailableRam(__instance);
-            if (ramAvail >= 0 && ramAvail < whole)
+            // 与原版同款护栏：余量未知（-1 / os 为空）或不够一步 → 本帧不涨。
+            if (avail < whole)
             {
                 state.Frac = 0;
                 return;
             }
 
-            // [EN] Synchronously deduct from ramAvaliable so that multiple
-            //      Postfix calls within the same frame see correct remaining RAM.
-            // [CN] 同步扣除 ramAvaliable，同一帧内多个 Postfix 看到正确余量
-            if (ramAvail >= 0)
-                ConsumeRam(__instance, whole);
-
             current += whole;
-            if (current > target) current = target;
+            if (current > target)
+                current = target;
         }
         else if (current > target)
         {
-            // Decrease / 下降
+            // 下降不需要余量检查（与原版一致）。
             current -= whole;
-            if (current < target) current = target;
+            if (current < target)
+                current = target;
         }
-        // current == target → do nothing, keep accumulator
-        // current == target → 不动，保留累积器
+        else
+        {
+            return;
+        }
 
-        _ramCostFi.SetValue(__instance, current);
+        if (exe.ramCost == current)
+            return;
+
+        if (Trace && _traceRows < 20000)
+        {
+            _traceRows++;
+            try
+            {
+                KernelFix.Instance.Log.LogInfo(
+                    $"[KF] RAM trace: {type.Name} ramCost {exe.ramCost} -> {current} "
+                    + $"target={target} whole={whole} avail={avail}");
+            }
+            catch
+            {
+                // 追踪本身绝不能影响修复逻辑
+            }
+        }
+
+        exe.ramCost = current;
     }
 
     // ===================================================================
@@ -132,65 +190,25 @@ internal static class RamTruncationFix
     // ===================================================================
 
     /// <summary>
-    /// [EN] Deduct `amount` from os.ramAvaliable to synchronize cross-Exe RAM tracking.
-    /// [CN] 从 os.ramAvaliable 扣除 amount，同步跨 Exe 的 RAM 追踪。
+    /// [EN] Authoritative free RAM: <c>totalRam - Σ ramCost</c> over the OS's current
+    ///      exe list, recomputed on demand. Immune to the once-per-frame
+    ///      <c>ramAvaliable</c> cache and to fade/removal timing.
+    ///      Returns -1 when the OS is unavailable (caller then skips growth).
+    /// [CN] 权威余量：`totalRam − Σ 当前 exe 的 ramCost`，按需现算。
+    ///      不受每帧只重算一次的 <c>ramAvaliable</c> 缓存、以及淡出/移除时机影响。
+    ///      OS 不可用时返回 -1（调用方据此不涨）。
     /// </summary>
-    private static void ConsumeRam(object exeInstance, int amount)
+    private static int ComputeFreeRam(ExeModule exe)
     {
         try
         {
-            var exeType = exeInstance.GetType();
-            if (!_osFieldCache.TryGetValue(exeType, out var osFi))
-            {
-                osFi = AccessTools.Field(exeType, "os");
-                _osFieldCache[exeType] = osFi;
-            }
-            if (osFi == null) return;
-            var os = osFi.GetValue(exeInstance);
-            if (os == null) return;
-
-            var osType = os.GetType();
-            if (!_ramFieldCache.TryGetValue(osType, out var ramFi))
-            {
-                ramFi = AccessTools.Field(osType, "ramAvaliable");
-                _ramFieldCache[osType] = ramFi;
-            }
-            if (ramFi == null) return;
-
-            int cur = (int)ramFi.GetValue(os);
-            ramFi.SetValue(os, cur - amount);
-        }
-        catch { }
-    }
-
-    /// <summary>
-    /// [EN] Read os.ramAvaliable. Returns -1 on failure (skip check).
-    /// [CN] 读 os.ramAvaliable，失败返回 -1（不做检查）。
-    /// </summary>
-    private static int ReadAvailableRam(object exeInstance)
-    {
-        try
-        {
-            var exeType = exeInstance.GetType();
-            if (!_osFieldCache.TryGetValue(exeType, out var osFi))
-            {
-                osFi = AccessTools.Field(exeType, "os");
-                _osFieldCache[exeType] = osFi;
-            }
-            if (osFi == null) return -1;
-
-            var os = osFi.GetValue(exeInstance);
+            OS os = exe.os;
             if (os == null) return -1;
-
-            var osType = os.GetType();
-            if (!_ramFieldCache.TryGetValue(osType, out var ramFi))
-            {
-                ramFi = AccessTools.Field(osType, "ramAvaliable");
-                _ramFieldCache[osType] = ramFi;
-            }
-            if (ramFi == null) return -1;
-
-            return (int)ramFi.GetValue(os);
+            int used = 0;
+            var list = os.exes;
+            for (int i = 0; i < list.Count; i++)
+                used += list[i].ramCost;
+            return os.totalRam - used;
         }
         catch
         {
@@ -199,21 +217,38 @@ internal static class RamTruncationFix
     }
 
     /// <summary>
-    /// [EN] Get ramCost target for the given type/instance.
-    ///      Returns current value if field not found (no-op branch).
-    /// [CN] 获取 ramCost 目标值，未知时返回当前值（不走方向分支）。
+    /// [EN] Read the instance's <c>targetRamUse</c> field (private on most of these
+    ///      classes; <c>DLCTraceSlower</c> has no field and uses the constant 600).
+    ///      Falls back to the current ramCost when unreadable, which makes the
+    ///      direction check a no-op — safer than guessing.
+    /// [CN] 读实例的 <c>targetRamUse</c>（多数类是私有字段；<c>DLCTraceSlower</c>
+    ///      没有该字段，原版写死 600）。读不到时回退当前 ramCost，方向检查变成空操作
+    ///      —— 比乱猜安全。
     /// </summary>
-    private static int GetTarget(Type type, object instance)
+    private static int GetTarget(Type type, ExeModule instance)
     {
         if (type == typeof(DLCTraceSlower))
             return 600;
 
-        var fi = AccessTools.Field(type, "targetRamUse");
-        if (fi != null)
-            return (int)fi.GetValue(instance);
+        if (!_targetFieldCache.TryGetValue(type, out FieldInfo fi))
+        {
+            fi = AccessTools.Field(type, "targetRamUse");
+            _targetFieldCache[type] = fi;
+        }
 
-        // Field not found → fallback to current → current == target → no-op
-        return (int)_ramCostFi.GetValue(instance);
+        if (fi != null)
+        {
+            try
+            {
+                return (int)fi.GetValue(instance);
+            }
+            catch
+            {
+                // fall through
+            }
+        }
+
+        return instance.ramCost;
     }
 
     // ===================================================================
@@ -222,8 +257,7 @@ internal static class RamTruncationFix
 
     /// <summary>
     /// [EN] Register Postfix patches for all 6 target classes.
-    ///      Skips classes where targetRamUse can't be read.
-    /// [CN] 为 6 个目标类注册 Postfix 修补。targetRamUse 不可读的类跳过。
+    /// [CN] 为 6 个目标类注册 Postfix 修补。
     /// </summary>
     public static void Apply()
     {
@@ -233,29 +267,18 @@ internal static class RamTruncationFix
             nameof(Postfix),
             BindingFlags.Static | BindingFlags.Public);
 
-        var rows = new (Type type, string method, bool needsTarget)[]
+        var rows = new (Type type, string method)[]
         {
-            (typeof(ForkBombExe),          "Update",        true),
-            (typeof(DLCTraceSlower),        "Update",        false), // hardcoded 600
-            (typeof(SequencerExe),          "UpdateRamCost", true),
-            (typeof(ExtensionSequencerExe), "UpdateRamCost", true),
-            (typeof(ShellExe),              "Update",        true),
-            (typeof(NotesExe),              "Update",        true),
+            (typeof(ForkBombExe),           "Update"),
+            (typeof(DLCTraceSlower),        "Update"),
+            (typeof(SequencerExe),          "UpdateRamCost"),
+            (typeof(ExtensionSequencerExe), "UpdateRamCost"),
+            (typeof(ShellExe),              "Update"),
+            (typeof(NotesExe),              "Update"),
         };
 
-        foreach (var (type, method, needsTarget) in rows)
+        foreach (var (type, method) in rows)
         {
-            if (needsTarget)
-            {
-                var testFi = AccessTools.Field(type, "targetRamUse");
-                if (testFi == null)
-                {
-                    KernelFix.Instance.Log.LogWarning(
-                        $"[KF] RAM: {type.Name}.targetRamUse unreadable, skipping.");
-                    continue;
-                }
-            }
-
             var mi = AccessTools.Method(type, method);
             if (mi == null)
             {
@@ -264,11 +287,8 @@ internal static class RamTruncationFix
                 continue;
             }
 
-            harmony.Patch(mi,
-                postfix: new HarmonyMethod(postfixMi));
-
-            KernelFix.Instance.Log.LogDebug(
-                $"[KF] RAM: patched {type.Name}.{method}");
+            harmony.Patch(mi, postfix: new HarmonyMethod(postfixMi));
+            KernelFix.Instance.Log.LogDebug($"[KF] RAM: patched {type.Name}.{method}");
         }
     }
 }
