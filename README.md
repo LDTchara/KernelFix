@@ -2,6 +2,10 @@
 
 > **快速导航**： [中文版本](#中文版本) | [English Version](#english-version)
 
+> [!WARNING]
+> 本项目部分文档与代码由 AI 辅助生成，可能存在不准确或不完整之处，请在使用前自行评估；若发现问题，欢迎通过 Issue 或 PR 指出，我们会及时修正。
+> This project uses AI-assisted generation for parts of its documentation and code, which may be inaccurate or incomplete. Please evaluate before use, and feel free to report any issues via Issue or PR — we will fix them promptly.
+
 ## 中文版本
 
 KernelFix 是一款 **Hacknet** 的 **Pathfinder / BepInEx 全局插件**，修复原版 Hacknet 中遗留的一部分问题。
